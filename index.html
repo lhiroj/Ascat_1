@@ -10,7 +10,10 @@
         .container { display: flex; flex-direction: column; height: 100vh; padding: 12px; }
         .header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 14px 18px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .title { font-size: 1.4rem; font-weight: 800; color: #0284c7; }
+        .clock-container { display: flex; align-items: center; gap: 10px; }
         .clock { font-size: 1.6rem; font-weight: 900; color: #1e293b; }
+        .clear-btn { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+        .clear-btn:active { background: #dc2626; color: #ffffff; }
         .status-badge { font-size: 0.85rem; padding: 4px 10px; background: #e0f2fe; border-radius: 20px; color: #0369a1; font-weight: 700; display: inline-block; }
         .chat-box { flex: 1; overflow-y: auto; margin: 12px 0; padding: 8px; display: flex; flex-direction: column; gap: 12px; }
         .msg { padding: 14px 18px; border-radius: 18px; max-width: 85%; font-size: 1.1rem; line-height: 1.4; white-space: pre-line; }
@@ -31,11 +34,14 @@
                 <div class="title">Ascat AI v2</div>
                 <div class="status-badge" id="status">Hazır</div>
             </div>
-            <div class="clock" id="clock">00:00</div>
+            <div class="clock-container">
+                <button class="clear-btn" onclick="clearMemory()">🗑️ Hafızayı Sıfırla</button>
+                <div class="clock" id="clock">00:00</div>
+            </div>
         </div>
 
         <div class="chat-box" id="chat">
-            <div class="msg ai-msg">Merhaba Erdem! Ascat 2 sistem aktif. Sorunu sorabilirsin!</div>
+            <!-- Eski sohbet geçmişi buraya yüklenecek -->
         </div>
 
         <div class="quick-buttons">
@@ -62,8 +68,8 @@
             "llama-3.3-70b-versatile"
         ];
 
-        // SOHBET HAFIZASI DİZİSİ
-        const messagesHistory = [];
+        // TARAYICI HAFIZASINDAN (localStorage) GEÇMİŞİ YÜKLE VEYA BOŞ BAŞLAT
+        let messagesHistory = JSON.parse(localStorage.getItem('ascat_history')) || [];
 
         function updateClock() {
             const now = new Date();
@@ -87,6 +93,35 @@
             chat.scrollTop = chat.scrollHeight;
         }
 
+        // SAYFA AÇILDIĞINDA ESKİ MESAJLARI EKRANA DİZ
+        function renderHistory() {
+            const chat = document.getElementById('chat');
+            chat.innerHTML = ''; // Temizle
+
+            if (messagesHistory.length === 0) {
+                addMessage("Merhaba Erdem! Ascat 2 sistem aktif. Sorunu sorabilirsin!", "ai-msg");
+            } else {
+                messagesHistory.forEach(item => {
+                    const className = item.role === "user" ? "user-msg" : "ai-msg";
+                    addMessage(item.content, className);
+                });
+            }
+        }
+
+        // HAFIZAYI LOCALSTORAGE'A KAYDET
+        function saveHistory() {
+            localStorage.setItem('ascat_history', JSON.stringify(messagesHistory));
+        }
+
+        // HAFIZAYI SIFIRLAMA
+        function clearMemory() {
+            if (confirm("Sohbet geçmişini silmek istediğine emin misin?")) {
+                messagesHistory = [];
+                localStorage.removeItem('ascat_history');
+                renderHistory();
+            }
+        }
+
         async function getWeather() {
             try {
                 const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.0082&longitude=28.9784&current_weather=true');
@@ -95,7 +130,7 @@
             } catch (e) { return null; }
         }
 
-        // TÜM GEÇMİŞİ GROQ API'YE GÖNDEREN FONKSİYON
+        // GEÇMİŞİ GROQ API'YE GÖNDER
         async function fetchGroq() {
             const apiKey = CONFIG.groqKey.trim();
             if (!apiKey || apiKey.includes("BURAYA_GROQ")) {
@@ -104,10 +139,11 @@
 
             let lastError = "";
 
-            // System prompt + Geçmişteki tüm konuşmalar birleştiriliyor
+            // System prompt + Son 10 mesaj (Aşırı uzayıp harcama yapmaması için sınırlandırdık)
+            const recentHistory = messagesHistory.slice(-10);
             const apiMessages = [
                 { role: "system", content: CONFIG.systemPrompt },
-                ...messagesHistory
+                ...recentHistory
             ];
 
             for (let modelName of ACTIVE_MODELS) {
@@ -146,8 +182,9 @@
 
             addMessage(text, 'user-msg');
             
-            // Kullanıcının attığı mesajı hafızaya ekle
+            // Kullanıcı mesajını ekle ve kaydet
             messagesHistory.push({ role: "user", content: text });
+            saveHistory();
 
             input.value = '';
 
@@ -159,14 +196,13 @@
             if (lower.includes("derece") || lower.includes("hava kaç")) {
                 const wData = await getWeather();
                 statusEl.innerText = "Hazır";
-                let replyText = "";
-                if (wData) {
-                    replyText = `İstanbul'da anlık hava sıcaklığı ${wData.temperature}°C, rüzgar hızı ${wData.windspeed} km/s.`;
-                } else {
-                    replyText = "Canlı hava durumu verisi alınamadı.";
-                }
+                let replyText = wData 
+                    ? `İstanbul'da anlık hava sıcaklığı ${wData.temperature}°C, rüzgar hızı ${wData.windspeed} km/s.` 
+                    : "Canlı hava durumu verisi alınamadı.";
+                
                 addMessage(replyText, 'ai-msg');
                 messagesHistory.push({ role: "assistant", content: replyText });
+                saveHistory();
                 return;
             }
 
@@ -180,19 +216,25 @@
                 } else {
                     replyText = "Hava durumu bilgisine ulaşılamadı.";
                 }
+                
                 addMessage(replyText, 'ai-msg');
                 messagesHistory.push({ role: "assistant", content: replyText });
+                saveHistory();
                 return;
             }
 
             const reply = await fetchGroq();
             addMessage(reply, 'ai-msg');
             
-            // Yapay zekanın cevabını hafızaya ekle
+            // AI yanıtını ekle ve kaydet
             messagesHistory.push({ role: "assistant", content: reply });
+            saveHistory();
             
             statusEl.innerText = "Hazır";
         }
+
+        // BROWSER YÜKLENDİĞİNDE GEÇMİŞİ EKRANA ÇEK
+        renderHistory();
     </script>
 </body>
 </html>
