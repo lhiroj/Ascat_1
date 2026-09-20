@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JARVIS AI Terminal</title>
+    <title>Ascat AI Terminal</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
         html, body { height: 100%; width: 100%; overflow: hidden; background-color: #f1f5f9; color: #0f172a; }
@@ -28,14 +28,14 @@
     <div class="container">
         <div class="header">
             <div>
-                <div class="title">JARVIS AI</div>
+                <div class="title">Ascat AI v2</div>
                 <div class="status-badge" id="status">Hazır</div>
             </div>
             <div class="clock" id="clock">00:00</div>
         </div>
 
         <div class="chat-box" id="chat">
-            <div class="msg ai-msg">Merhaba Erdem! Sistem aktif. Sorunu sorabilirsin!</div>
+            <div class="msg ai-msg">Merhaba Erdem! Ascat 2 sistem aktif. Sorunu sorabilirsin!</div>
         </div>
 
         <div class="quick-buttons">
@@ -52,16 +52,14 @@
 
     <script>
         const CONFIG = {
-            // BURAYA gsk_ İLE BAŞLAYAN API KEY'İNİZİ YAZIN:
             groqKey: "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",
-            systemPrompt: "Sen Alcatel tablet ekranında çalışan kişisel asistan JARVIS'sin. Kullanıcın Erdem. Yanıtlarını her zaman samimi, akıllı, net ve kısa tut."
+            systemPrompt: "Sen Alcatel tablet ekranında çalışan kişisel asistan Ascat AI'sin. Kullanıcın Erdem. Yanıtlarını her zaman samimi, akıllı, net ve kısa tut."
         };
 
-        // Sırasıyla denenecek en hızlı ve en çok limitli modeller:
         const ACTIVE_MODELS = [
-            "llama-3.1-8b-instant",      // En hızlı + Günlük 14,400 istek hakkı
-            "openai/gpt-oss-20b",        // Aşırı hızlı alternatif
-            "llama-3.3-70b-versatile"    // Çok daha zeki geniş model
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-20b",
+            "llama-3.3-70b-versatile"
         ];
 
         function updateClock() {
@@ -102,7 +100,6 @@
 
             let lastError = "";
 
-            // Modelleri sırayla dener, 404 alsa bile hemen bir sonrakine geçer!
             for (let modelName of ACTIVE_MODELS) {
                 try {
                     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
