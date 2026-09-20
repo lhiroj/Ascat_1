@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ascat AI Terminal</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+        html, body { height: 100%; width: 100%; overflow: hidden; background-color: #f1f5f9; color: #0f172a; }
+        .container { display: flex; flex-direction: column; height: 100vh; padding: 12px; }
+        .header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 14px 18px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .title { font-size: 1.4rem; font-weight: 800; color: #0284c7; }
+        .clock { font-size: 1.6rem; font-weight: 900; color: #1e293b; }
+        .status-badge { font-size: 0.85rem; padding: 4px 10px; background: #e0f2fe; border-radius: 20px; color: #0369a1; font-weight: 700; display: inline-block; }
+        .chat-box { flex: 1; overflow-y: auto; margin: 12px 0; padding: 8px; display: flex; flex-direction: column; gap: 12px; }
+        .msg { padding: 14px 18px; border-radius: 18px; max-width: 85%; font-size: 1.1rem; line-height: 1.4; white-space: pre-line; }
+        .user-msg { align-self: flex-end; background: #0284c7; color: #ffffff; border-bottom-right-radius: 4px; }
+        .ai-msg { align-self: flex-start; background: #ffffff; color: #0f172a; border-bottom-left-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .quick-buttons { flex-shrink: 0; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 4px; scrollbar-width: none; }
+        .quick-btn { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 16px; border-radius: 20px; font-weight: 700; font-size: 0.95rem; white-space: nowrap; cursor: pointer; }
+        .quick-btn:active { background: #0284c7; color: #ffffff; }
+        .input-box { flex-shrink: 0; display: flex; gap: 8px; background: #ffffff; padding: 8px 12px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        input { flex: 1; background: transparent; border: none; outline: none; color: #0f172a; padding: 10px; font-size: 1.1rem; }
+        button.send-btn { background: #0284c7; color: #ffffff; border: none; padding: 10px 20px; border-radius: 14px; font-weight: 800; font-size: 1.05rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <div class="title">Ascat AI v2</div>
+                <div class="status-badge" id="status">Hazır</div>
+            </div>
+            <div class="clock" id="clock">00:00</div>
+        </div>
+
+        <div class="chat-box" id="chat">
+            <div class="msg ai-msg">Merhaba Erdem! Ascat 2 sistem aktif. Sorunu sorabilirsin!</div>
+        </div>
+
+        <div class="quick-buttons">
+            <button class="quick-btn" onclick="sendQuick('İstanbul hava kaç derece?')">🌡️ Hava kaç derece?</button>
+            <button class="quick-btn" onclick="sendQuick('Bugün yağış var mı?')">🌧️ Yağış var mı?</button>
+            <button class="quick-btn" onclick="sendQuick('Günün önemli haberleri')">📰 Haberler</button>
+        </div>
+
+        <div class="input-box">
+            <input type="text" id="userInput" placeholder="Mesajınızı yazın..." onkeypress="handleKey(event)">
+            <button class="send-btn" onclick="send()">Gönder</button>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            groqKey: "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",
+            systemPrompt: "Sen Alcatel tablet ekranında çalışan kişisel asistan Ascat AI'sin. Kullanıcın Erdem. Yanıtlarını her zaman samimi, akıllı, net ve kısa tut."
+        };
+
+        const ACTIVE_MODELS = [
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-20b",
+            "llama-3.3-70b-versatile"
+        ];
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function handleKey(e) { if (e.key === 'Enter') send(); }
+        function sendQuick(text) {
+            document.getElementById('userInput').value = text;
+            send();
+        }
+
+        function addMessage(text, className) {
+            const chat = document.getElementById('chat');
+            const msg = document.createElement('div');
+            msg.className = `msg ${className}`;
+            msg.innerText = text;
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        async function getWeather() {
+            try {
+                const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.0082&longitude=28.9784&current_weather=true');
+                const data = await res.json();
+                return data.current_weather;
+            } catch (e) { return null; }
+        }
+
+        async function fetchGroq(prompt) {
+            const apiKey = CONFIG.groqKey.trim();
+            if (!apiKey || apiKey.includes("BURAYA_GROQ")) {
+                return "⚠️ Hata: Lütfen geçerli bir gsk_... API anahtarı girin.";
+            }
+
+            let lastError = "";
+
+            for (let modelName of ACTIVE_MODELS) {
+                try {
+                    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: modelName,
+                            messages: [
+                                { role: "system", content: CONFIG.systemPrompt },
+                                { role: "user", content: prompt }
+                            ]
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data.choices[0].message.content;
+                    } else {
+                        const errData = await res.json();
+                        lastError = `(${res.status}) ${errData.error?.message || 'Hata'}`;
+                    }
+                } catch (e) {
+                    lastError = e.message;
+                }
+            }
+
+            return `⚠️ API Bağlantı Hatası: ${lastError}`;
+        }
+
+        async function send() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'user-msg');
+            input.value = '';
+
+            const statusEl = document.getElementById('status');
+            statusEl.innerText = "Düşünüyor...";
+
+            const lower = text.toLowerCase();
+
+            if (lower.includes("derece") || lower.includes("hava kaç")) {
+                const wData = await getWeather();
+                statusEl.innerText = "Hazır";
+                if (wData) {
+                    addMessage(`İstanbul'da anlık hava sıcaklığı ${wData.temperature}°C, rüzgar hızı ${wData.windspeed} km/s.`, 'ai-msg');
+                } else {
+                    addMessage("Canlı hava durumu verisi alınamadı.", 'ai-msg');
+                }
+                return;
+            }
+
+            if (lower.includes("yağış") || lower.includes("yağmur")) {
+                const wData = await getWeather();
+                statusEl.innerText = "Hazır";
+                if (wData) {
+                    const isRain = wData.weathercode >= 51;
+                    addMessage(isRain ? "Evet Erdem, şu an yağışlı bir hava var." : "Hayır Erdem, şu an yağış görünmüyor.", 'ai-msg');
+                } else {
+                    addMessage("Hava durumu bilgisine ulaşılamadı.", 'ai-msg');
+                }
+                return;
+            }
+
+            const reply = await fetchGroq(text);
+            addMessage(reply, 'ai-msg');
+            statusEl.innerText = "Hazır";
+        }
+    </script>
+</body>
+</html>
