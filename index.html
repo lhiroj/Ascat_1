@@ -62,6 +62,9 @@
             "llama-3.3-70b-versatile"
         ];
 
+        // SOHBET HAFIZASI DİZİSİ
+        const messagesHistory = [];
+
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -92,13 +95,20 @@
             } catch (e) { return null; }
         }
 
-        async function fetchGroq(prompt) {
+        // TÜM GEÇMİŞİ GROQ API'YE GÖNDEREN FONKSİYON
+        async function fetchGroq() {
             const apiKey = CONFIG.groqKey.trim();
             if (!apiKey || apiKey.includes("BURAYA_GROQ")) {
                 return "⚠️ Hata: Lütfen geçerli bir gsk_... API anahtarı girin.";
             }
 
             let lastError = "";
+
+            // System prompt + Geçmişteki tüm konuşmalar birleştiriliyor
+            const apiMessages = [
+                { role: "system", content: CONFIG.systemPrompt },
+                ...messagesHistory
+            ];
 
             for (let modelName of ACTIVE_MODELS) {
                 try {
@@ -110,10 +120,7 @@
                         },
                         body: JSON.stringify({
                             model: modelName,
-                            messages: [
-                                { role: "system", content: CONFIG.systemPrompt },
-                                { role: "user", content: prompt }
-                            ]
+                            messages: apiMessages
                         })
                     });
 
@@ -138,6 +145,10 @@
             if (!text) return;
 
             addMessage(text, 'user-msg');
+            
+            // Kullanıcının attığı mesajı hafızaya ekle
+            messagesHistory.push({ role: "user", content: text });
+
             input.value = '';
 
             const statusEl = document.getElementById('status');
@@ -148,28 +159,38 @@
             if (lower.includes("derece") || lower.includes("hava kaç")) {
                 const wData = await getWeather();
                 statusEl.innerText = "Hazır";
+                let replyText = "";
                 if (wData) {
-                    addMessage(`İstanbul'da anlık hava sıcaklığı ${wData.temperature}°C, rüzgar hızı ${wData.windspeed} km/s.`, 'ai-msg');
+                    replyText = `İstanbul'da anlık hava sıcaklığı ${wData.temperature}°C, rüzgar hızı ${wData.windspeed} km/s.`;
                 } else {
-                    addMessage("Canlı hava durumu verisi alınamadı.", 'ai-msg');
+                    replyText = "Canlı hava durumu verisi alınamadı.";
                 }
+                addMessage(replyText, 'ai-msg');
+                messagesHistory.push({ role: "assistant", content: replyText });
                 return;
             }
 
             if (lower.includes("yağış") || lower.includes("yağmur")) {
                 const wData = await getWeather();
                 statusEl.innerText = "Hazır";
+                let replyText = "";
                 if (wData) {
                     const isRain = wData.weathercode >= 51;
-                    addMessage(isRain ? "Evet Erdem, şu an yağışlı bir hava var." : "Hayır Erdem, şu an yağış görünmüyor.", 'ai-msg');
+                    replyText = isRain ? "Evet Erdem, şu an yağışlı bir hava var." : "Hayır Erdem, şu an yağış görünmüyor.";
                 } else {
-                    addMessage("Hava durumu bilgisine ulaşılamadı.", 'ai-msg');
+                    replyText = "Hava durumu bilgisine ulaşılamadı.";
                 }
+                addMessage(replyText, 'ai-msg');
+                messagesHistory.push({ role: "assistant", content: replyText });
                 return;
             }
 
-            const reply = await fetchGroq(text);
+            const reply = await fetchGroq();
             addMessage(reply, 'ai-msg');
+            
+            // Yapay zekanın cevabını hafızaya ekle
+            messagesHistory.push({ role: "assistant", content: reply });
+            
             statusEl.innerText = "Hazır";
         }
     </script>
